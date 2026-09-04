@@ -7,11 +7,11 @@
   if (!scopeValue) { alert('Cancelled: no scope value.'); return; }
   const quarterField = scopeType === 'quarter' ? ((prompt('Rally internal quarter field name', 'c_Quarter') || 'c_Quarter').trim()) : 'c_Quarter';
   const fetchFields = ['ObjectID','FormattedID','Name','Description','ScheduleState','PlanEstimate','Owner','Project','Iteration','Release','PortfolioItem','LastUpdateDate','Tasks', quarterField].join(',');
-  async function query(endpoint, query, fetch = 'true') {
+  async function query(endpoint, queryText, fields = 'true') {
     const all = []; let start = 1; const pagesize = 200;
     while (true) {
-      const u = new URL(`${api}/${endpoint}`); u.searchParams.set('query', query); u.searchParams.set('fetch', fetch); u.searchParams.set('start', String(start)); u.searchParams.set('pagesize', String(pagesize)); u.searchParams.set('projectScopeDown', 'true'); u.searchParams.set('projectScopeUp', 'false');
-      const r = await fetch(u, {credentials: 'include', headers: {'Accept':'application/json'}});
+      const u = new URL(`${api}/${endpoint}`); u.searchParams.set('query', queryText); u.searchParams.set('fetch', fields); u.searchParams.set('start', String(start)); u.searchParams.set('pagesize', String(pagesize)); u.searchParams.set('projectScopeDown', 'true'); u.searchParams.set('projectScopeUp', 'false');
+      const r = await window.fetch(u, {credentials: 'include', headers: {'Accept':'application/json'}});
       if (!r.ok) throw new Error(`${endpoint}: HTTP ${r.status} ${await r.text()}`);
       const qr = (await r.json()).QueryResult; all.push(...(qr.Results || []));
       if (all.length >= (qr.TotalResultCount || 0)) break; start += pagesize;
