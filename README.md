@@ -1,121 +1,138 @@
-# Rally ↔ GitLab Bridge v0.2.0
+# Rally ↔ GitLab Bridge v0.3.0
 
-Selective Rally → GitLab migration and controlled synchronization for a squad.
+Selective Rally → GitLab migration and controlled synchronization for a squad, rebuilt as a **Node.js / JavaScript application**. No Python installation is required.
 
-## Browser SSO POC mode
+## Why this exists
 
-This release adds a POC mode for Rally users who sign in with company SSO but cannot create Rally API keys or OAuth clients.
+Rally remains the programme/cross-squad planning source while GitLab is used for squad execution. The bridge only synchronizes the selected overlap instead of attempting a full migration.
 
-**Important:** the bridge does not copy or store `iceSessionId`, Rally cookies, SSO tokens, or browser credentials. A helper script runs on the already-authenticated Rally page, reads the selected work items using that page's own browser session, and downloads a JSON snapshot. The local bridge consumes only that snapshot.
+## Stack
 
-Browser-session mode is intentionally **read-only toward Rally** in v0.2.0. Rally → GitLab preview/import/reconciliation can use a refreshed snapshot. GitLab → Rally automated writes remain disabled for this POC.
+- Node.js 20+
+- JavaScript (ES modules)
+- Express
+- SQLite via `better-sqlite3`
+- Commander CLI
+- Native `fetch` for GitLab REST calls
+- Browser-side Rally snapshot helper for company SSO environments
 
-## Install / upgrade
+## Rally browser SSO mode
+
+The bridge does **not** copy or store `iceSessionId`, Rally cookies, SSO tokens, localStorage values, or browser credentials. The helper runs on an already-authenticated Rally page and uses that browser page's existing session to read selected work items. It downloads only a JSON snapshot, which is then uploaded to the local bridge.
+
+Rally access remains read-only in this POC. GitLab → Rally changes are reported as proposed Rally updates rather than being written automatically.
+
+## Install
+
+Check that Node is available:
 
 ```bash
-cd /path/to/rally-gitlab-bridge
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+node --version
+npm --version
 ```
 
-If you already have the app installed, from the new v0.2.0 folder simply run:
+Node.js 20 or newer is recommended.
+
+Then:
 
 ```bash
-pip install -e .
-```
-
-## Configure browser-session mode
-
-Copy the example configuration:
-
-```bash
+git clone https://github.com/anandhan-naveen/rally-gitlab-bridge.git
+cd rally-gitlab-bridge
+npm install
 cp .env.example .env
+npm run dev
 ```
 
-The Rally section should contain:
-
-```dotenv
-RALLY_AUTH_MODE=browser_snapshot
-RALLY_SNAPSHOT_FILE=data/rally_snapshot.json
-RALLY_BASE_URL=https://rally1.rallydev.com
-RALLY_API_KEY=
-```
-
-`RALLY_API_KEY` remains blank.
-
-You can leave Workspace/Project OIDs blank for this mode. Squad filtering is performed after the snapshot is loaded. For example:
-
-```dotenv
-RALLY_SQUAD_FIELD=Project
-RALLY_SQUAD_VALUE=My Squad
-RALLY_QUARTER_FIELD=c_Quarter
-```
-
-Only set `RALLY_SQUAD_VALUE` when you know the exact Rally Project/Squad name you want to include. Leaving it blank disables squad filtering.
-
-## Run
-
-```bash
-uvicorn app.main:app --reload
-```
-
-Open:
-
-- Dashboard: `http://127.0.0.1:8000`
-- Health: `http://127.0.0.1:8000/health`
-- Browser helper instructions: `http://127.0.0.1:8000/rally/browser-helper`
+Open `http://127.0.0.1:8000`.
 
 ## Create a Rally snapshot
 
-1. Open the bridge dashboard and choose **Create snapshot from logged-in Rally**.
-2. Download `rally-browser-helper.js`.
-3. Open Rally normally and sign in through company SSO.
-4. Open browser Developer Tools → Console on the Rally page.
-5. Open the downloaded JS file, copy its contents, paste it into the Rally page console, and press Enter.
-6. Choose `feature`, `quarter`, or `story` and enter the Rally identifier/value.
-7. The helper downloads a JSON file. No Rally item is changed.
-8. Return to the local dashboard and upload that JSON file.
+1. Start the bridge and open the dashboard.
+2. Choose **Create snapshot from logged-in Rally**.
+3. Download `rally-browser-helper.js`.
+4. Open Rally and sign in normally with company SSO.
+5. Open Developer Tools → Console on the Rally page.
+6. Paste the helper contents into the Rally console and run it.
+7. Choose `story`, `feature`, or `quarter` and enter the value.
+8. Rally downloads a JSON snapshot. No Rally work item is changed.
+9. Upload the JSON file on the local bridge dashboard.
 
-After upload, the dashboard shows the snapshot scope and counts.
+The helper deliberately avoids requesting the quarter custom field for story/feature snapshots, so subscriptions without `c_Quarter` can still use those scopes.
 
-## Preview from the snapshot
+## CLI
 
-For a feature snapshot such as `F1234`:
-
-```bash
-rally-gitlab-bridge preview feature F1234
-```
-
-For a story:
+Preview without creating anything:
 
 ```bash
-rally-gitlab-bridge preview story US1234
+npm run bridge -- preview story US1234
+npm run bridge -- preview feature F1234
+npm run bridge -- preview quarter Q4-2026
 ```
 
-For a quarter:
+Dry-run an import:
 
 ```bash
-rally-gitlab-bridge preview quarter Q4-2026
+npm run bridge -- import feature F1234 --dry-run
 ```
 
-Preview does not create anything in GitLab.
+Import:
 
-## GitLab
+```bash
+npm run bridge -- import feature F1234
+```
 
-Only configure GitLab after Rally snapshot preview is working. Use a test GitLab project first.
+Reconcile Rally-owned fields into GitLab:
+
+```bash
+npm run bridge -- sync feature F1234 --dry-run
+npm run bridge -- sync feature F1234
+```
+
+Status:
+
+```bash
+npm run bridge -- status
+```
+
+## GitLab configuration
+
+Start with a test project.
 
 ```dotenv
 GITLAB_BASE_URL=https://gitlab.example.com
-GITLAB_TOKEN=...
+GITLAB_TOKEN=
 GITLAB_PROJECT_ID=123
 GITLAB_PROJECT_PATH=group/project
 ```
 
-Then import one small feature/story first.
+The token should be kept only in your local `.env`; `.env` is ignored by Git.
 
-## Tests
+## Current behavior
+
+- Selective scopes: story, feature, quarter, or all snapshot stories
+- Local squad filtering
+- Preview and dry-run support
+- Idempotent import using durable Rally ObjectID ↔ GitLab IID mappings
+- Rally stories become GitLab issues
+- Rally tasks are created as GitLab issues labelled `source::rally-task` and reference their parent story issue
+- Rally-owned title/description reconciliation into GitLab
+- GitLab-owned state/assignee changes are surfaced as proposed Rally updates in browser-snapshot mode
+- Local web dashboard and CLI
+
+## Field ownership model
+
+The intended model is deliberately asymmetric:
+
+- **Rally master:** title, description, quarter, feature, dependencies, squad/team
+- **GitLab master:** execution state, assignee, estimates
+
+This avoids an unsafe generic bidirectional sync.
+
+## Development
 
 ```bash
-pytest
+npm run dev
+npm test
 ```
+
+Health endpoint: `http://127.0.0.1:8000/health`
