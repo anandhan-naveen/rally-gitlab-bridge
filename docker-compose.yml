@@ -7,6 +7,7 @@ services:
     volumes:
       - bridge_data:/app/data
     environment:
-      DATABASE_URL: sqlite:////app/data/bridge.db
+      DATABASE_FILE: /app/data/bridge.db
+      RALLY_SNAPSHOT_FILE: /app/data/rally_snapshot.json
 volumes:
   bridge_data:
